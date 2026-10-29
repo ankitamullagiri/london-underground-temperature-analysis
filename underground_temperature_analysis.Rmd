@@ -1,0 +1,282 @@
+---
+title: 'London Underground Temperatures: Where to Pilot Air Cooling'
+author: 'Ankita Mullagiri'
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Section 1:Data Analysis
+Contains all the codes and outputs of the data analyses.
+
+## 1. Loading Libraries
+```{r setup, message=FALSE}
+#Loading all the libraries required for the data analyses
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+library(gridExtra)
+library(kableExtra)
+options(width=100) 
+knitr::opts_chunk$set(echo = TRUE)
+```
+## 2. Load the data
+```{r}
+#Reading the Underground dataset and printing it to check the structure
+df <- read_csv("Underground.csv")
+df
+```
+
+## 3. Initial Data Review
+
+```{r}
+#Check the summary of the dataframe
+summary(df)
+```
+
+```{r}
+#Check for number of unique rows
+nrow(unique(df))
+```
+```{r}
+#Check unique values of line
+df %>% distinct(Line) 
+df %>% distinct(Month) 
+df %>% distinct(Year) 
+```
+```{r}
+#Check for missing values in each column
+(total_missing_val <-sum(is.na(df)))
+(col_missing_val <-colSums(is.na(df)))
+```
+
+```{r}
+#Summary table of the data, while ignoring NA values
+mean(df$Temp, na.rm=TRUE)
+sd(df$Temp, na.rm = TRUE)
+max(df$Temp, na.rm= TRUE)
+min(df$Temp, na.rm= TRUE)
+```
+
+## 4. Data Dictionary
+
+| Column | Description                                      |
+|--------|--------------------------------------------------|
+| ID     | Unique identifier for each record                |
+| Year   | Year of temperature reading                      |
+| Month  | Month of temperature reading                     |
+| Line   | Name of the Underground Line                     |
+| Temp   | Average Monthly temperature of line in (°C)      |
+
+## 5. Data Integrity and Quality Checks
+```{r}
+#Plot data to check the distribution and look for outlier.
+ggplot(data =df) + geom_histogram(mapping=aes(x = Temp), bins = 30)+ labs(title = "Histogram Of Underground Temperatures", x = "Temperature (°C)", y = "Count") 
+```
+
+```{r}
+#Significant outliers exist. Examine further using boxplot
+ggplot(data = df, mapping = aes(y = Temp)) + geom_boxplot()+ labs(title = "Boxplot of Underground Tube Data",y = "Temperature (°C)")
+```
+```{r}
+#Use IQR method to detect outliers
+# Calculate quartiles and IQR for the Temp column
+Q1 <- quantile(df$Temp, 0.25, na.rm = TRUE)
+Q3 <- quantile(df$Temp, 0.75, na.rm = TRUE)
+IQR <- Q3 - Q1
+
+# Define lower and upper limits
+lower_limit <- Q1 - 1.5 * IQR
+upper_limit <- Q3 + 1.5 * IQR
+
+# Print limits
+cat("Lower limit:", lower_limit, "\n")
+cat("Upper limit:", upper_limit, "\n")
+
+# Filter outliers
+outliers <- df %>%
+  filter(Temp < lower_limit | Temp > upper_limit)
+
+# View the outliers
+print(outliers)
+
+# Count of outliers
+cat("Number of outliers:", nrow(outliers), "\n")
+```
+
+```{r}
+#Print out the outliers
+#Print out first 15 entries in Ascending Order
+df %>%
+  arrange(Temp)%>%
+  head(15)
+#Print out last 15 entries in Descending Order
+df%>%
+  arrange(desc(Temp))%>%
+  head(15)
+#After identifying outliers using the IQR method, we found that approximately 10% of the data points are classified as outliers. But most of the classified entries belong to sub surface lines which are dropped later in the process. When reviewing the temperature values in both ascending and descending order, we determined that extremely low temperatures (0–3°C) recorded during summer are unrealistic, and therefore considered them outliers. Similarly, any values above 50°C are physically implausible, and extremely high temperatures exceeding 200°C were also classified as outliers. These readings are only 6 in number, so we use a filter to replace the outliers with NA in order to maintain data integrity.
+
+```
+## 6. Data Cleaning
+```{r}
+#Replacing outliers with NA values and checking the summary
+df2<- df%>%
+  mutate(Temp= ifelse(Temp<5 | Temp > 50, NA, Temp))
+```
+
+```{r}
+#Check the summary of the new dataframe
+summary(df2)
+#Replacing outliers with NA had little effect on the mean (23.86°C to 23.58°C). 
+```
+
+```{r}
+#Summary table of the cleaned data, while ignoring NA values
+mean(df2$Temp, na.rm=TRUE)
+sd(df2$Temp, na.rm = TRUE)
+max(df2$Temp, na.rm= TRUE)
+min(df2$Temp, na.rm= TRUE)
+```
+```{r}
+#Checking if dropping NA records and keeping NA records will result in different summary statistics.
+df.no.na<- df2%>%
+  drop_na(Temp)
+```
+```{r}
+mean(df.no.na$Temp, na.rm=TRUE)
+sd(df.no.na$Temp, na.rm = TRUE)
+max(df.no.na$Temp, na.rm= TRUE)
+min(df.no.na$Temp, na.rm= TRUE)
+#To maintain data integrity, we keep the NA records, as removing them would yield the same mean value.
+```
+```{r}
+#Summary table of each of the lines
+summary_table <- df2 %>%
+  group_by(Line) %>%
+  summarise(
+    Mean_Temperature = mean(Temp, na.rm = TRUE),
+    SD_Temperature = sd(Temp, na.rm = TRUE),
+    Min_Temperature = min(Temp, na.rm = TRUE),
+    Max_Temperature = max(Temp, na.rm = TRUE)
+  )
+summary_table
+```
+
+```{r}
+#Counting total records that belong to Sub-surface_lines
+sum(grepl("Sub-surface_lines", df$Line))
+```
+
+```{r}
+#Making a new dataframe where 144 Sub-Surface Lines records are dropped
+df_clean <- df2 %>% 
+  filter(!grepl("Sub-surface_lines", Line))
+```
+
+```{r}
+#Summary of the new dataset to check if Sub-Surface Lines have been dropped
+summary(df_clean)
+```
+```{r}
+#Summary table of each of the lines of after dropping Sub-Surface Lines
+summary_table_2 <- df_clean %>%
+  group_by(Line) %>%
+  summarise(
+    Mean_Temperature = mean(Temp, na.rm = TRUE),
+    SD_Temperature = sd(Temp, na.rm = TRUE),
+    Min_Temperature = min(Temp, na.rm = TRUE),
+    Max_Temperature = max(Temp, na.rm = TRUE)
+  )
+summary_table_2
+```
+
+## 7. Visualization- Distribution Plot along with Mean and standard Deviation
+```{r}
+#Plotting the distribution of Temperatures across all years with the mean and standard deviation for all lines.
+df_clean$Line <- as.factor(df_clean$Line)
+
+plot.1<-(ggplot(df_clean, aes(x = Line, y = Temp, fill = Line)) +
+  geom_violin(trim = FALSE, alpha = 0.5) +   # show full distribution
+  stat_summary(fun = mean, geom = "point", size = 3, color = "black") +  # mean point
+  stat_summary(
+    fun.data = mean_sdl,
+    fun.args = list(mult = 1),
+    geom = "errorbar",
+    width = 0.2,
+    color = "black"
+  ) +
+  labs(
+    title = "Temperature Distribution by Underground Line",
+    x = "Underground Line",
+    y = "Temperature (°C)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none"))
+plot.1
+```
+
+## 8. Performing T-test on Bakerloo and Central Line
+
+```{r}
+#Filtered the dataset for Bakerloo and Central line
+df3 <- df2 %>% filter(Line %in% c("Bakerloo", "Central"))
+```
+
+```{r}
+#Performed a two sample t-test on these lines
+t.test(Temp~Line, data=df3)
+```
+
+```{r}
+#Performed a two sample t-test on these lines for the months of May, June, July and August
+df3 %>%
+  filter(Month %in% c("May", "June", "July", "August")) %>%
+  t.test(Temp ~ Line, data = .)
+```
+# Section 2: Professional Reporting
+
+## 1. Aim
+This report represents the results of the analyses requested. The dataset consisted of 1152 observations of average monthly temperature readings recorded in various underground lines, namely: Bakerloo, Central, Jubilee, Northern, Piccadilly, Victoria Waterloo_and_City and Sub-surface_lines from the years 2013 to 2024. 
+The task at hand is to play the role of a policy maker and choose between Bakerloo Line and Central Line to pilot the new air-cooling system based on data analysis.
+
+## 2. Initial Data Review and Data Quality Checks
+The dataset was reviewed for its structure, for missing values and its statistical summary. It was then examined for outliers. Upon finding 6 extreme outliers in the dataset, these outliers were replaced with NA. This was done to avoid messing with the data integrity because the best practice is to try and avoid dropping records or augmenting them. It was observed that there was not any significant difference in the summary of statistics of the data when the outliers were treated as NA and then dropped or when they were made NA and kept. Post this, the "Sub-Surface Line" records were dropped because they were closer to the surface than other lines. Based on the initial analysis, it was observed that Bakerloo line had the highest mean temperature.
+
+The summary statistics for each of the underground lines are shown.
+```{r, echo=FALSE}
+summary_table_2 %>%
+  kbl(caption = "Table 1. Summary Statistics of Each Line") %>%
+  kable_styling()
+```
+## 3. Key Findings
+Following the data cleaning process, the dataset was visualized to understand the distribution of temperatures across the different London Underground lines. A violin plot was plotted to show these statistics for each line. 
+- Each violin depicts the distribution of temperatures recorded for that line.
+- Width of the violin depicts the frequency of that temperature occuring.
+- The black dot indicates the average temperature of the line.
+- The black bar shows how much the temperatures vary around the average.
+Upon going over the plot, we notice that Bakerloo and Central Lines have the highest average temperatures.The plot aligns with the summary statistics mentioned above. This indicates that the passengers experience warmer conditions in these lines. 
+From this we can conclude that the lines that can benefit the most with the new cooling systems would be Bakerloo and Central Lines.
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+plot.1
+
+```
+
+A two- sample t-test was performed to compare the average temperatures of Bakerloo and Central Lines across the dataset. The test showed a statistically significant difference between the two lines (t = 2.18, p = 0.03), with the Bakerloo line being slightly warmer on average (mean = 26.82°C) than the Central line (mean = 26.11°C). Although the difference in temperature is small (around 0.7°C), it is unlikely to be due to chance.
+
+However, when the analysis was repeated only for the summer months (May–August), the difference was no longer statistically significant (t = 0.16, p = 0.87). During these months, both lines had similar average temperatures (Bakerloo = 28.74°C, Central = 28.68°C). This indicates that although Bakerloo is generally warmer across the year, both lines heat up to very similar levels in summer, likely due to seasonal conditions affecting all lines.
+
+Across the year, Bakerloo is slightly hotter than Central, but in summer both lines become equally warm, meaning the difference is mainly seen outside peak heat months.
+
+## 4. Conclusion
+Although the Bakerloo Line is slightly warmer than the Central Line across the full dataset, the difference is small and during the summer months the two lines have almost identical temperatures. This means that either line would be a reasonable choice for the cooling trial.
+In addition to temperature comparisons, other aspects should be considered such as passenger density, installation feasibility, existing ventilation, maintenance access, cost and tunnel depth when deciding where to trial the cooling system.
+
+
+
+
+
+
